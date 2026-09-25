@@ -45,6 +45,8 @@ static const _PyOS_LongOption longopts[] = {
     {L"help-all", 0, 2},
     {L"help-env", 0, 3},
     {L"help-xoptions", 0, 4},
+    {L"app-strict-root", 1, 5},
+    {L"app-strict-exclude", 1, 6},
     {NULL, 0, -1},                     /* sentinel */
 };
 

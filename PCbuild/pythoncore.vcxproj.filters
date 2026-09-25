@@ -1403,6 +1403,9 @@
     <ClCompile Include="..\Python\assemble.c">
       <Filter>Python</Filter>
     </ClCompile>
+    <ClCompile Include="..\Python\appstrict.c">
+      <Filter>Python</Filter>
+    </ClCompile>
     <ClCompile Include="..\Python\ast.c">
       <Filter>Python</Filter>
     </ClCompile>

@@ -156,6 +156,10 @@ struct PyCodeObject _PyCode_DEF(1);
 /* A function defined in class scope */
 #define CO_METHOD  0x8000000
 
+/* Code object compiled from an AppStrict-restricted source module
+   (fork extension; see InternalDocs/appstrict.md). */
+#define CO_APPSTRICT  0x10000000
+
 /* This should be defined if a future statement modifies the syntax.
    For example, when a keyword is added.
 */

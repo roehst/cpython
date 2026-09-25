@@ -217,6 +217,13 @@ typedef struct PyConfig {
     wchar_t *run_module;
     wchar_t *run_filename;
 
+    /* --- AppStrict (fork extension) ---------------- */
+    /* Paths of application source roots compiled in AppStrict mode, set by
+       --app-strict-root.  May be empty (AppStrict disabled). */
+    PyWideStringList appstrict_roots;
+    /* Paths excluded from AppStrict mode, set by --app-strict-exclude. */
+    PyWideStringList appstrict_excludes;
+
     /* --- Set by Py_Main() -------------------------- */
     wchar_t *sys_path_0;
 

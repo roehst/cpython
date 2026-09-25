@@ -15,6 +15,7 @@
  */
 
 #include "Python.h"
+#include "pycore_appstrict.h"     // _PyAppStrict_IsRestrictedFilename()
 #include "pycore_ast.h"           // PyAST_Check()
 #include "pycore_code.h"
 #include "pycore_compile.h"
@@ -1526,11 +1527,49 @@ _PyCompile_OptimizeAndAssemble(compiler *c, int addNone)
     return optimize_and_assemble_code_unit(u, const_cache, code_flags, filename);
 }
 
+/* Mark every code object in the (nested) co_consts tree with CO_APPSTRICT.
+   This propagates the marker from the module code object to top-level
+   functions, methods, comprehensions, annotation scopes and any other
+   nested generated code objects produced from restricted source. */
+static int
+mark_code_tree_appstrict(PyObject *co)
+{
+    if (!PyCode_Check(co)) {
+        return 0;
+    }
+    ((PyCodeObject *)co)->co_flags |= CO_APPSTRICT;
+    PyObject *consts = ((PyCodeObject *)co)->co_consts;
+    for (Py_ssize_t i = 0; i < PyTuple_GET_SIZE(consts); i++) {
+        PyObject *c = PyTuple_GET_ITEM(consts, i);
+        if (PyCode_Check(c) && mark_code_tree_appstrict(c) < 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 PyCodeObject *
 _PyAST_Compile(mod_ty mod, PyObject *filename, PyCompilerFlags *pflags,
                int optimize, PyArena *arena, PyObject *module)
 {
     assert(!PyErr_Occurred());
+
+    /* AppStrict: restricted application source is validated against the
+       static structural subset after parsing and ordinary AST validation
+       and before symbol-table/code generation, so the programmer's original
+       source structure is checked.  This is the single central validation
+       hook; code generation is left untouched. */
+    PyThreadState *tstate = _PyThreadState_GET();
+    int appstrict = _PyAppStrict_IsRestrictedFilename(tstate, filename);
+    if (appstrict < 0) {
+        return NULL;
+    }
+    if (appstrict) {
+        if (!_PyAppStrict_Validate(mod, filename)) {
+            return NULL;
+        }
+    }
+
     compiler *c = new_compiler(mod, filename, pflags, optimize, arena, module);
     if (c == NULL) {
         return NULL;
@@ -1539,6 +1578,11 @@ _PyAST_Compile(mod_ty mod, PyObject *filename, PyCompilerFlags *pflags,
     PyCodeObject *co = compiler_mod(c, mod);
     compiler_free(c);
     assert(co || PyErr_Occurred());
+    if (co != NULL && appstrict) {
+        if (mark_code_tree_appstrict((PyObject *)co) < 0) {
+            Py_CLEAR(co);
+        }
+    }
     return co;
 }
 

@@ -874,11 +874,32 @@ class SourceLoader(_LoaderBasics):
                     except (ImportError, EOFError):
                         pass
                     else:
-                        _bootstrap._verbose_message('{} matches {}', bytecode_path,
-                                                    source_path)
-                        return _compile_bytecode(bytes_data, name=fullname,
-                                                 bytecode_path=bytecode_path,
-                                                 source_path=source_path)
+                        # AppStrict: a cached bytecode object for a restricted
+                        # source path must have been validated and carry the
+                        # CO_APPSTRICT marker; a stale ordinary cache must not
+                        # silently bypass validation.
+                        if _imp.is_appstrict_path(source_path):
+                            try:
+                                cached_code = marshal.loads(bytes(bytes_data))
+                            except Exception:
+                                pass
+                            else:
+                                _CO_APPSTRICT = 0x10000000
+                                if cached_code.co_flags & _CO_APPSTRICT:
+                                    _bootstrap._verbose_message(
+                                        '{} matches {} (AppStrict)',
+                                        bytecode_path, source_path)
+                                    return _compile_bytecode(
+                                        bytes_data, name=fullname,
+                                        bytecode_path=bytecode_path,
+                                        source_path=source_path)
+                            # Fall through: recompile from source.
+                        else:
+                            _bootstrap._verbose_message('{} matches {}', bytecode_path,
+                                                        source_path)
+                            return _compile_bytecode(bytes_data, name=fullname,
+                                                     bytecode_path=bytecode_path,
+                                                     source_path=source_path)
         if source_bytes is None:
             source_bytes = self.get_data(source_path)
         code_object = self.source_to_code(source_bytes, source_path, fullname)

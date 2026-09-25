@@ -1,6 +1,7 @@
 /* Module definition and import implementation */
 
 #include "Python.h"
+#include "pycore_appstrict.h"     // _PyAppStrict_IsRestrictedFilename()
 #include "pycore_audit.h"         // _PySys_Audit()
 #include "pycore_ceval.h"
 #include "pycore_critical_section.h"  // Py_BEGIN_CRITICAL_SECTION()
@@ -5658,6 +5659,24 @@ _imp__set_lazy_attributes_impl(PyObject *module, PyObject *modobj,
 PyDoc_STRVAR(doc_imp,
 "(Extremely) low-level import machinery bits as used by importlib.");
 
+/* AppStrict: report whether a source path is restricted (path-based
+   ownership, resolved through --app-strict-root / --app-strict-exclude).
+   Used by importlib's bytecode cache validation. */
+static PyObject *
+imp_is_appstrict_path(PyObject *module, PyObject *arg)
+{
+    PyThreadState *tstate = _PyThreadState_GET();
+    int r = _PyAppStrict_IsRestrictedFilename(tstate, arg);
+    if (r < 0) {
+        return NULL;
+    }
+    return PyBool_FromLong(r);
+}
+
+PyDoc_STRVAR(is_appstrict_path_doc,
+"is_appstrict_path(path)\n\n\
+Return True if the given source path is inside an AppStrict-restricted root.");
+
 static PyMethodDef imp_methods[] = {
     _IMP_EXTENSION_SUFFIXES_METHODDEF
     _IMP_LOCK_HELD_METHODDEF
@@ -5679,6 +5698,8 @@ static PyMethodDef imp_methods[] = {
     _IMP__FIX_CO_FILENAME_METHODDEF
     _IMP_SOURCE_HASH_METHODDEF
     _IMP__SET_LAZY_ATTRIBUTES_METHODDEF
+    {"is_appstrict_path", imp_is_appstrict_path, METH_O,
+     is_appstrict_path_doc},
     {NULL, NULL}  /* sentinel */
 };
 

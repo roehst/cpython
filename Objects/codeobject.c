@@ -2683,6 +2683,13 @@ code_getcode(PyObject *self, void *closure)
     return _PyCode_GetCode(code);
 }
 
+static PyObject *
+code_getappstrict(PyObject *self, void *closure)
+{
+    PyCodeObject *code = _PyCodeObject_CAST(self);
+    return PyBool_FromLong((code->co_flags & CO_APPSTRICT) != 0);
+}
+
 static PyGetSetDef code_getsetlist[] = {
     {"_co_code_adaptive", code_getcodeadaptive, NULL, NULL},
     // The following old names are kept for backward compatibility.
@@ -2690,6 +2697,7 @@ static PyGetSetDef code_getsetlist[] = {
     {"co_cellvars",       code_getcellvars,     NULL, NULL},
     {"co_freevars",       code_getfreevars,     NULL, NULL},
     {"co_code",           code_getcode,         NULL, NULL},
+    {"co_appstrict",      code_getappstrict,    NULL, NULL},
     {0}
 };
 

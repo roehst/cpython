@@ -174,6 +174,8 @@ static const PyConfigSpec PYCONFIG_SPEC[] = {
     SPEC(perf_profiling, UINT, READ_ONLY, NO_SYS),
     SPEC(remote_debug, BOOL, READ_ONLY, NO_SYS),
     SPEC(program_name, WSTR, READ_ONLY, NO_SYS),
+    SPEC(appstrict_roots, WSTR_LIST, READ_ONLY, NO_SYS),
+    SPEC(appstrict_excludes, WSTR_LIST, READ_ONLY, NO_SYS),
     SPEC(run_command, WSTR_OPT, READ_ONLY, NO_SYS),
     SPEC(run_filename, WSTR_OPT, READ_ONLY, NO_SYS),
     SPEC(run_module, WSTR_OPT, READ_ONLY, NO_SYS),
@@ -429,6 +431,11 @@ static const char usage_help[] =
 "#s{-X} #b{opt} : set implementation-specific option\n"
 "#L{--check-hash-based-pycs} #b{always|default|never}:\n"
 "         control how Python invalidates hash-based .pyc files\n"
+"#L{--app-strict-root} #b{path}:\n"
+"         mark #b{path} as an application source root compiled in AppStrict\n"
+"         mode (may be given multiple times)\n"
+"#L{--app-strict-exclude} #b{path}:\n"
+"         exclude #b{path} from AppStrict mode (may be given multiple times)\n"
 "#L{--help-env}: print help about Python environment variables and exit\n"
 "#L{--help-xoptions}: print help about implementation-specific #S{-X} options and exit\n"
 "#L{--help-all}: print complete help information and exit\n"
@@ -1099,6 +1106,8 @@ PyConfig_Clear(PyConfig *config)
     CLEAR(config->run_module);
     CLEAR(config->run_filename);
     CLEAR(config->check_hash_pycs_mode);
+    _PyWideStringList_Clear(&config->appstrict_roots);
+    _PyWideStringList_Clear(&config->appstrict_excludes);
 #ifdef Py_DEBUG
     CLEAR(config->run_presite);
 #endif
@@ -3079,6 +3088,24 @@ config_parse_cmdline(PyConfig *config, PyWideStringList *warnoptions,
         case 4:
             // help-xoptions
             DEFER_OPTION(c);
+            break;
+
+        case 5:
+            // app-strict-root
+            status = PyWideStringList_Append(&config->appstrict_roots,
+                                             _PyOS_optarg);
+            if (_PyStatus_EXCEPTION(status)) {
+                return status;
+            }
+            break;
+
+        case 6:
+            // app-strict-exclude
+            status = PyWideStringList_Append(&config->appstrict_excludes,
+                                             _PyOS_optarg);
+            if (_PyStatus_EXCEPTION(status)) {
+                return status;
+            }
             break;
 
         case 'b':
