@@ -168,8 +168,10 @@ appstrict_canonicalize(const wchar_t *path)
     }
 
 #ifdef HAVE_REALPATH
-    /* realpath() resolves symlinks and removes . / .. for existing paths. */
-    size_t bufsize = wcslen(abspath) + 1;
+    /* realpath() resolves symlinks and removes . / .. for existing paths.
+       The result may be longer than the input (e.g. when a path component
+       is itself a symlink), so use a MAXPATHLEN-sized buffer. */
+    size_t bufsize = (size_t)MAXPATHLEN + 1;
     wchar_t *resolved = PyMem_RawMalloc(bufsize * sizeof(wchar_t));
     if (resolved != NULL) {
         wchar_t *ok = _Py_wrealpath(abspath, resolved, bufsize);
@@ -280,6 +282,15 @@ _PyAppStrict_IsRestrictedFilename(PyThreadState *tstate, PyObject *filename)
         return 0;                       /* AppStrict disabled */
     }
     if (!PyUnicode_Check(filename)) {
+        return 0;
+    }
+
+    /* Pseudo-filenames produced by -c ("<string>"), the REPL ("<stdin>"),
+       frozen modules ("<frozen ...>") and similar are not real source paths
+       and must never be classified as restricted: canonicalizing them would
+       resolve them relative to the current working directory. */
+    Py_ssize_t flen = PyUnicode_GetLength(filename);
+    if (flen > 0 && PyUnicode_READ_CHAR(filename, 0) == '<') {
         return 0;
     }
 

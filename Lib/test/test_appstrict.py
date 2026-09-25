@@ -179,7 +179,8 @@ class TestRules(AppStrictTestBase):
         # ASR063 - no del
         ("ASR063", "def f(x: int) -> int:\n    del x\n    return 0\n", True),
         # ASR064/65 - no yield/yield from
-        ("ASR064", "def f(x: int):\n    yield x\n", True),
+        ("ASR064", "def f(x: int) -> object:\n    yield x\n", True),
+        ("ASR065", "def f(x: object) -> object:\n    yield from x\n", True),
         # ASR070 - no while
         ("ASR070", "def f(x: int) -> int:\n    while x > 0:\n        x -= 1\n    return x\n", True),
         # ASR072 - no bare / broad except
@@ -218,8 +219,13 @@ class TestRules(AppStrictTestBase):
 @support.requires_subprocess()
 class TestLibraryBoundary(AppStrictTestBase):
     def test_unrestricted_library(self):
-        """Restricted app may import an unrestricted dynamic library."""
-        lib = write(self.root / "lib", "dynamic_lib.py", """
+        """Restricted app may import an unrestricted dynamic library.
+
+        The library deliberately uses metaclasses, multiple classes, exec and
+        getattr.  The restricted service module contains only declarations and
+        is imported from an unrestricted -c driver.
+        """
+        write(self.root / "lib", "dynamic_lib.py", """
             class Meta(type):
                 pass
             class A(metaclass=Meta):
@@ -230,21 +236,25 @@ class TestLibraryBoundary(AppStrictTestBase):
             def dynamic(x):
                 return getattr(x, "foo")
         """)
-        service = write(self.root / "app", "service.py", """
-            import sys
-            sys.path.insert(0, "../lib")
+        write(self.root / "app", "service.py", """
             import dynamic_lib
 
             class Service:
                 def run(self) -> int:
                     return dynamic_lib.generated
-            print(dynamic_lib.generated)
         """)
         rc, out, err = run_python(
             "--app-strict-root", str(self.root / "app"),
-            str(service), cwd=str(self.root / "app"))
+            "-c", textwrap.dedent("""
+                import sys
+                sys.path.insert(0, %r)
+                sys.path.insert(0, %r)
+                import service
+                assert service.Service().run() == 42
+                print("ok")
+            """ % (str(self.root / "app"), str(self.root / "lib"))))
         self.assertEqual(rc, 0, err)
-        self.assertIn("42", out)
+        self.assertIn("ok", out)
 
     def test_dynamic_lib_under_root_rejected(self):
         """The same dynamic source copied under a restricted root fails."""
@@ -257,65 +267,36 @@ class TestLibraryBoundary(AppStrictTestBase):
                 pass
             exec("generated = 42")
         """)
-        main = write(self.root / "app", "main.py", "import dynamic_lib\n")
-        rc, out, err = run_python(
-            "--app-strict-root", str(self.root / "app"),
-            str(main))
-        self.assertNotEqual(rc, 0)
-        self.assertIn("ASR", err)
-
-    def test_callback_no_leak(self):
-        """Restricted callback passed to an unrestricted library works."""
-        write(self.root / "lib", "caller.py", """
-            def call(f, x):
-                return f(x)
-        """)
-        main = write(self.root / "app", "main.py", """
-            import sys
-            sys.path.insert(0, "../lib")
-            import caller
-
-            def f(x: int) -> int:
-                return x + 1
-
-            RESULT = caller.call(f, 1)
-        """)
-        # The module-level RESULT assignment is a call, so make the module
-        # unrestricted... but then it isn't restricted.  Instead put the call
-        # in the (unrestricted) library and import the callback from app.
-        write(self.root / "lib", "runner.py", """
-            from main import f
-            def go() -> int:
-                return f(1)
-        """)
-        # Simplest: run the app file which passes f into the library call
-        # from inside a method (not at module level).
-        write(self.root / "app", "main2.py", """
-            import sys
-            sys.path.insert(0, "../lib")
-            import caller
-
-            def f(x: int) -> int:
-                return x + 1
-
-            class Main:
-                def run(self) -> int:
-                    return caller.call(f, 1)
-
-            if __name__ == "__main__":
-                pass
-        """)
-        # Actually execute: use -c to invoke after import machinery is set.
         rc, out, err = run_python(
             "--app-strict-root", str(self.root / "app"),
             "-c", textwrap.dedent("""
                 import sys
                 sys.path.insert(0, %r)
-                import main2, caller
-                assert caller.call(main2.f, 1) == 2
+                import dynamic_lib
+            """ % str(self.root / "app")))
+        self.assertNotEqual(rc, 0)
+        self.assertIn("ASR", err)
+
+    def test_callback_no_leak(self):
+        """A restricted callback passed to an unrestricted library works."""
+        write(self.root / "lib", "caller.py", """
+            def call(f, x):
+                return f(x)
+        """)
+        write(self.root / "app", "callbacks.py", """
+            def f(x: int) -> int:
+                return x + 1
+        """)
+        rc, out, err = run_python(
+            "--app-strict-root", str(self.root / "app"),
+            "-c", textwrap.dedent("""
+                import sys
+                sys.path.insert(0, %r)
+                sys.path.insert(0, %r)
+                import callbacks, caller
+                assert caller.call(callbacks.f, 1) == 2
                 print("ok")
-            """ % str(self.root / "app")),
-            cwd=str(self.root))
+            """ % (str(self.root / "app"), str(self.root / "lib"))))
         self.assertEqual(rc, 0, err)
         self.assertIn("ok", out)
 
